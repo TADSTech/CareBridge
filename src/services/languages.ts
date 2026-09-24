@@ -1,0 +1,58 @@
+import { LanguageOption } from '../types';
+
+export const SUPPORTED_LANGUAGES: LanguageOption[] = [
+  {
+    id: 'pidgin',
+    name: 'Nigerian Pidgin',
+    nativeName: 'Naija Pidgin',
+    flag: '🇳🇬',
+    region: 'Nigeria / West Africa',
+    sampleInput: 'My chest dey pain me since yesterday, especially when I breathe.',
+    sampleTranslation: 'Patient reports chest pain since yesterday, exacerbated by deep inspiration.',
+  },
+  {
+    id: 'yoruba',
+    name: 'Yorùbá',
+    nativeName: 'Èdè Yorùbá',
+    flag: '🇳🇬',
+    region: 'Southwest Nigeria / Benin',
+    sampleInput: 'Mo ní irora lójijì ní ẹgbẹ́ mi àti ibà lọ́jọ́ méjì pẹ̀lú.',
+    sampleTranslation: 'Patient experiences sudden severe flank pain with chills/fever for 2 days.',
+  },
+  {
+    id: 'english',
+    name: 'English',
+    nativeName: 'English (Nigerian / Standard)',
+    flag: '🇬🇧',
+    region: 'Pan-African / Global',
+    sampleInput: 'I have been having sharp abdominal pain and nausea since last night.',
+    sampleTranslation: 'Patient presents with acute epigastric pain accompanied by nausea.',
+  },
+  {
+    id: 'hausa',
+    name: 'Hausa',
+    nativeName: 'Harshen Hausa',
+    flag: '🇳🇬',
+    region: 'Northern Nigeria / Niger',
+    sampleInput: 'Kai na yana ciwo sosai kuma ina jin zazzabi tun jiya.',
+    sampleTranslation: 'Patient complains of intense headache and persistent fever since yesterday.',
+  },
+  {
+    id: 'igbo',
+    name: 'Igbo',
+    nativeName: 'Asụsụ Igbo',
+    flag: '🇳🇬',
+    region: 'Southeast Nigeria',
+    sampleInput: 'Isi na-awa m nke ukwuu n\'abalị a, ahụ m dịkwa ọkụ.',
+    sampleTranslation: 'Patient reports severe nocturnal cephalalgia accompanied by hyperthermia.',
+  },
+  {
+    id: 'swahili',
+    name: 'Kiswahili',
+    nativeName: 'Kiswahili',
+    flag: '🇰🇪',
+    region: 'East Africa (Kenya, Tanzania, Uganda)',
+    sampleInput: 'Nimekuwa na maumivu ya tumbo na kizunguzungu tangu jana.',
+    sampleTranslation: 'Patient reports abdominal cramps and vertigo since yesterday.',
+  },
+];
