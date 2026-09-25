@@ -11,6 +11,9 @@ import { ToastContainer, ToastMessage } from './components/ui/Toast';
 import { AIEngine } from './services/aiEngine';
 import { ProcessClinicianResponseResult } from './services/aiEngine';
 import { SpeechEngine } from './services/speechEngine';
+import { AccountAccess } from './components/AccountAccess';
+import { accountsEnabled, AccountSession, getStoredSession, getValidSession, loadConsultation, saveConsultation, signOut } from './services/accountStore';
+import { LogOut, LoaderCircle } from 'lucide-react';
 
 export function App() {
   const [perspective, setPerspective] = useState<Perspective>('patient');
@@ -19,6 +22,10 @@ export function App() {
   const [demoScriptOpen, setDemoScriptOpen] = useState(false);
   const [accessibilityOpen, setAccessibilityOpen] = useState(false);
   const [currentDemoStep, setCurrentDemoStep] = useState(1);
+  const [accountSession, setAccountSession] = useState<AccountSession | null>(() => accountsEnabled ? getStoredSession() : null);
+  const [accountLoading, setAccountLoading] = useState(() => accountsEnabled && Boolean(getStoredSession()));
+  const [accountLoadError, setAccountLoadError] = useState('');
+  const [consultationId, setConsultationId] = useState<string | null>(null);
 
   // Accessibility preferences
   const [accessibilityPrefs, setAccessibilityPrefs] = useState<AccessibilityPrefs>({
@@ -45,6 +52,47 @@ export function App() {
   };
 
   const [messages, setMessages] = useState<Message[]>([]);
+
+  const handleSignOut = async () => {
+    await signOut(accountSession);
+    setAccountSession(null);
+  };
+
+  useEffect(() => {
+    if (!accountsEnabled) return;
+    if (!accountSession) { setMessages([]); setConsultationId(null); setAccountLoading(false); return; }
+    let active = true;
+    setAccountLoading(true);
+    setAccountLoadError('');
+    void (async () => {
+      try {
+        const validSession = await getValidSession(accountSession);
+        if (active) setAccountSession(validSession);
+        const consultation = await loadConsultation(validSession);
+        if (active) { setConsultationId(consultation.id); setMessages(consultation.messages); }
+      } catch (error) {
+        if (active) {
+          if (!getStoredSession()) setAccountSession(null);
+          else setAccountLoadError(error instanceof Error ? error.message : 'Could not load your consultation.');
+        }
+      } finally { if (active) setAccountLoading(false); }
+    })();
+    return () => { active = false; };
+  }, [accountSession]);
+
+  useEffect(() => {
+    if (!accountsEnabled || !accountSession || !consultationId || accountLoading) return;
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const validSession = await getValidSession(accountSession);
+          if (validSession !== accountSession) setAccountSession(validSession);
+          await saveConsultation(consultationId, messages, validSession);
+        } catch (error) { addToast(error instanceof Error ? error.message : 'Could not save your consultation.', 'error'); }
+      })();
+    }, 650);
+    return () => window.clearTimeout(timer);
+  }, [accountSession, accountLoading, consultationId, messages]);
 
   // Execute patient message input
   const handleSendMessage = async (text: string, language: Language) => {
@@ -158,6 +206,21 @@ export function App() {
     }
   };
 
+  if (accountsEnabled && !accountSession) return <AccountAccess onAuthenticated={setAccountSession} />;
+  if (accountsEnabled && accountLoadError && accountSession) return (
+    <main className="min-h-screen bg-pearl flex items-center justify-center px-4">
+      <section className="surface-card max-w-md p-6 space-y-4">
+        <h1 className="text-xl font-semibold text-deep-iris">Could not load your saved consultation</h1>
+        <p role="alert" className="text-sm text-fog">{accountLoadError}</p>
+        <div className="flex gap-2">
+          <button onClick={() => setAccountSession({ ...accountSession })} className="rounded-pill bg-iris-pulse px-4 py-2 text-sm font-semibold text-cloud-white">Try again</button>
+          <button onClick={handleSignOut} className="rounded-pill border border-ash px-4 py-2 text-sm text-deep-iris">Sign out</button>
+        </div>
+      </section>
+    </main>
+  );
+  if (accountsEnabled && accountLoading) return <main className="min-h-screen bg-pearl flex items-center justify-center text-sm text-fog gap-2"><LoaderCircle className="w-4 h-4 animate-spin" />Loading your saved consultation…</main>;
+
   return (
     <div
       className={`min-h-screen bg-pearl text-deep-iris flex flex-col font-sans ${
@@ -179,6 +242,15 @@ export function App() {
         openAccessibilityModal={() => setAccessibilityOpen(true)}
         openDemoScriptModal={() => setDemoScriptOpen(true)}
       />
+
+      {accountsEnabled && accountSession && (
+        <div className="w-full max-w-[1180px] mx-auto px-4 pt-3 flex justify-end items-center gap-3 text-xs text-fog">
+          <span>Signed in{accountSession.user.email ? ` · ${accountSession.user.email}` : ''}</span>
+          <button onClick={handleSignOut} className="inline-flex items-center gap-1.5 rounded-pill border border-ash bg-cloud-white px-3 py-1.5 text-deep-iris hover:border-iris-pulse" aria-label="Sign out">
+            <LogOut className="w-3.5 h-3.5" /> Sign out
+          </button>
+        </div>
+      )}
 
       {/* Main View Container */}
       <main id="main-content" className="flex-1 pt-6" tabIndex={-1}>

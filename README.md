@@ -20,6 +20,8 @@ bun run dev
 
 Open [http://localhost:3000](http://localhost:3000). The Vite server forwards `/api` requests to the local Node API on port 3001. When a configured voice API call fails, the app falls back to browser speech synthesis if a matching voice is available. Groq is required for visible text translation.
 
+To enable accounts and saved consultations, create a Supabase project, run [database/schema.sql](database/schema.sql) in its SQL editor, and set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in `.env`. The app then shows sign-in/sign-up and saves each user's active consultation under Supabase Row Level Security. The anon key is intended for browser use; never put a Supabase service-role key in the frontend. Without those two settings, the demo runs without accounts and consultation messages stay only in memory.
+
 ## Text translation and speech
 
 Groq translates patient statements into English and clinician responses into plain English plus the selected patient language. The text is shown in the app before optional speech generation. Speech routing prefers 9jaLingo for Pidgin, Yorùbá, Hausa, and Igbo; Azure for Kiswahili and Nigerian English; and YarnGPT when the preferred provider is not configured. Voice IDs can be overridden in `.env.example`.
@@ -36,8 +38,8 @@ Latest live smoke check: Groq text processing passed for all six interface langu
 ## Current prototype limits
 
 - Groq translates the patient's statement into English and prepares an intake draft. It does not diagnose, assess urgency, or generate vital signs. Clinicians must confirm the translation and assess the patient.
-- Accounts, application-level sign-in, and consultation read/write flows are not yet connected. `database/schema.sql` prepares a Supabase Auth protected table with per-user row-level security; applying it alone does not enable persistence.
-- `Dockerfile` builds a single-origin production image, but no live host, database, vendor credentials, domain, or privacy review has been configured. Do not enter real patient data.
+- Accounts and consultation load/save are wired to Supabase Auth and its REST API, with per-user row-level security in `database/schema.sql`. They require a configured Supabase project and have not been live-tested because this workspace has no Supabase settings.
+- `Dockerfile` builds a single-origin production image. Supply the public Supabase URL and anon key as Docker build args to enable accounts. No live host, database, domain, or privacy review has been configured. Do not enter real patient data.
 - ASR is wired to YarnGPT's asynchronous endpoint but could not be confirmed because the configured key was rejected with HTTP 401. Manual editing remains available after transcription.
 - Translation, ASR, and voice output need review with fluent native speakers and licensed clinicians before any real-care use. See [validation/REVIEW_PROTOCOL.md](validation/REVIEW_PROTOCOL.md). No review or clinical sign-off has been completed.
 - Supported interface languages are Nigerian Pidgin, Yorùbá, English, Hausa, Igbo, and Kiswahili.

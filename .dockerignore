@@ -1,0 +1,9 @@
+.env
+.env.*
+!.env.example
+.git
+.agents/skills
+node_modules
+dist
+coverage
+*.log
