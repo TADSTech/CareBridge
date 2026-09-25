@@ -20,7 +20,7 @@ bun run dev
 
 Open [http://localhost:3000](http://localhost:3000). The Vite server forwards `/api` requests to the local Node API on port 3001. When a configured voice API call fails, the app falls back to browser speech synthesis if a matching voice is available. Groq is required for visible text translation.
 
-To enable accounts and saved consultations, create a Supabase project, run [database/schema.sql](database/schema.sql) in its SQL editor, and set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in `.env`. The app then shows sign-in/sign-up and saves each user's active consultation under Supabase Row Level Security. The anon key is intended for browser use; never put a Supabase service-role key in the frontend. Without those two settings, the demo runs without accounts and consultation messages stay only in memory.
+To enable accounts and saved consultations, create a Supabase project, run [database/schema.sql](database/schema.sql) in its SQL editor, and set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in `.env`. The app then shows sign-in/sign-up and saves each user's active consultation under Supabase Row Level Security. The anon key is intended for browser use; never put a Supabase service-role key in the frontend. Without those two settings, the demo runs without accounts and consultation messages stay only in memory. A Neon Postgres connection string belongs in server-only `DATABASE_URL`; it has been connection-tested, but consultation storage and accounts are not wired to Neon yet. Neon Auth must be enabled separately and its auth URL configured before the current Supabase account flow can be replaced.
 
 ## Text translation and speech
 
@@ -31,7 +31,8 @@ The patient microphone records a short audio clip and sends it to YarnGPT's serv
 ### Other African voice options
 
 - **9jaLingo** advertises Hausa, Igbo, Yoruba, and Nigerian Pidgin voices; the integration selects those language routes when `NAIJALINGO_API_KEY` is set (the earlier `NINEJALINGO_API_KEY` spelling is also accepted).
-- **Microsoft Azure Speech** supplies the configured Kiswahili and Nigerian English voice when `AZURE_SPEECH_KEY` and `AZURE_SPEECH_REGION` are set. Other regional English voices are available by setting `AZURE_ENGLISH_VOICE` to a supported Azure voice ID.
+- **Microsoft Azure Speech** supplies Kiswahili and Nigerian English in this app. Its current catalogue also lists Afrikaans, Amharic, and isiZulu neural voices, plus regional English voices for Nigeria, Kenya, Ghana, Tanzania, and South Africa. These additional languages are not yet added to CareBridge's language picker or speech routing.
+- **YarnGPT** is the current Nigerian-language choice for accent-aware English and TTS voices in English, Pidgin, Hausa, Yoruba, and Igbo. Its live ASR catalogue currently lists those same five languages.
 
 Latest live smoke check (2026-09-25): Groq text processing passed for all six interface languages; Azure returned Kiswahili audio; 9jaLingo returned Pidgin, Yoruba, Hausa, and Igbo audio; YarnGPT returned Nigerian English audio and transcribed that recording back to “good morning please tell me how i can help you today.” (HTTP 200). YarnGPT's ASR language catalogue endpoint returned HTTP 200 and listed English, Yoruba, Igbo, Hausa, and Pidgin. These checks used fictional phrases. This confirms the provider request path, not recognition quality across accents or noisy clinic environments. Review provider voice catalogues and validate pronunciation and transcripts with native speakers before any care use.
 
@@ -40,7 +41,7 @@ Latest live smoke check (2026-09-25): Groq text processing passed for all six in
 - Groq translates the patient's statement into English and prepares an intake draft. It does not diagnose, assess urgency, or generate vital signs. Clinicians must confirm the translation and assess the patient.
 - Accounts and consultation load/save are wired to Supabase Auth and its REST API, with per-user row-level security in `database/schema.sql`. They require a configured Supabase project and have not been live-tested because this workspace has no Supabase settings. Neon Postgres can be used instead, but the current Supabase Auth/Data API code and policies are not a drop-in fit; this requires a Neon database adapter and compatible authentication setup.
 - `Dockerfile` builds a single-origin production image. Supply the public Supabase URL and anon key as Docker build args to enable accounts. No live host, database, domain, or privacy review has been configured. Do not enter real patient data.
-- YarnGPT's asynchronous ASR path has now been live-tested on generated English audio. Its catalogue lists five ASR languages, leaving Kiswahili without the app's cloud transcription path; manual text entry remains available.
+- YarnGPT's asynchronous ASR path has now been live-tested on generated English audio. Its catalogue lists five ASR languages, leaving Kiswahili without the app's cloud transcription path; manual text entry remains available. Azure's wider STT catalogue includes Afrikaans, Amharic, Kiswahili, and isiZulu, but CareBridge does not yet route microphone recordings to Azure.
 - Translation, ASR, and voice output need review with fluent native speakers and licensed clinicians before any real-care use. See [validation/REVIEW_PROTOCOL.md](validation/REVIEW_PROTOCOL.md). No review or clinical sign-off has been completed.
 - Supported interface languages are Nigerian Pidgin, Yorùbá, English, Hausa, Igbo, and Kiswahili.
 
