@@ -9,16 +9,19 @@ export interface SpeechRecognitionCallbacks {
 export class SpeechEngine {
   private static recognition: any = null;
   private static synth: SpeechSynthesis | null = typeof window !== 'undefined' ? window.speechSynthesis : null;
+  private static audio: HTMLAudioElement | null = null;
+  private static requestController: AbortController | null = null;
+  private static requestId = 0;
 
   /**
-   * Start microphone listening using Web Speech API with simulated fallback.
+   * Start microphone listening using the browser Web Speech API.
    */
   static startListening(language: Language, callbacks: SpeechRecognitionCallbacks): boolean {
     const SpeechRecognition =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
-      console.warn('Web Speech API not supported in this browser environment. Using simulated voice recognition.');
+      console.warn('Web Speech API is not supported in this browser environment.');
       return false;
     }
 
@@ -91,9 +94,50 @@ export class SpeechEngine {
   }
 
   /**
-   * Speak text out loud using browser Speech Synthesis with pitch/speed & Web Audio backup.
+   * Prefer YarnGPT speech; use browser speech synthesis when the API is unavailable.
    */
   static speak(text: string, language: Language, rate: number = 0.95, onEnd?: () => void): void {
+    void this.speakWithYarn(text, language, rate, onEnd);
+  }
+
+  private static async speakWithYarn(text: string, language: Language, rate: number, onEnd?: () => void) {
+    this.stopSpeaking();
+    const requestId = this.requestId;
+    const controller = new AbortController();
+    this.requestController = controller;
+    try {
+      const response = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, language, translated: true }),
+        signal: controller.signal,
+      });
+      if (requestId !== this.requestId) return;
+      if (!response.ok) throw new Error('YarnGPT voice is unavailable.');
+      const audioUrl = URL.createObjectURL(await response.blob());
+      const audio = new Audio(audioUrl);
+      this.audio = audio;
+      audio.playbackRate = rate;
+      audio.onended = () => {
+        URL.revokeObjectURL(audioUrl);
+        if (this.audio === audio) this.audio = null;
+        onEnd?.();
+      };
+      audio.onerror = () => {
+        URL.revokeObjectURL(audioUrl);
+        if (this.audio === audio) this.audio = null;
+        this.speakInBrowser(text, language, rate, onEnd);
+      };
+      await audio.play();
+    } catch {
+      if (requestId !== this.requestId) return;
+      this.speakInBrowser(text, language, rate, onEnd);
+    } finally {
+      if (this.requestController === controller) this.requestController = null;
+    }
+  }
+
+  private static speakInBrowser(text: string, language: Language, rate: number, onEnd?: () => void): void {
     if (!this.synth) {
       if (onEnd) onEnd();
       return;
@@ -142,6 +186,13 @@ export class SpeechEngine {
    * Stop any active audio playback.
    */
   static stopSpeaking() {
+    this.requestId += 1;
+    this.requestController?.abort();
+    this.requestController = null;
+    if (this.audio) {
+      this.audio.pause();
+      this.audio = null;
+    }
     if (this.synth) {
       this.synth.cancel();
     }

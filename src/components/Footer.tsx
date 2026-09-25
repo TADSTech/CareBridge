@@ -25,7 +25,7 @@ export const Footer: React.FC = () => {
               <span>CareBridge</span>
             </div>
             <p className="text-xs text-fog max-w-md leading-relaxed">
-              Turning healthcare access into healthcare understanding across Africa. Connecting patients and clinicians through real-time voice, local language translation, and clinical summarization.
+              Helping patients and care teams communicate across language and literacy barriers. Clinicians remain responsible for reviewing every intake.
             </p>
           </div>
 

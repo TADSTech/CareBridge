@@ -24,6 +24,7 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+.agents/skills/
 
 # Package manager lockfiles — Bun only (commit bun.lock)
 package-lock.json

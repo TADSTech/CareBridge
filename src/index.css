@@ -62,19 +62,17 @@ h1, h2, h3, h4, h5, h6, .font-heading {
 /* Signature word highlight — light section treatment */
 .word-highlight {
   display: inline-block;
-  padding: 0 8px;
-  border: 1px dashed var(--color-iris-pulse);
-  border-radius: var(--radius-icons);
+  padding: 0 2px 2px;
+  border-bottom: 2px solid var(--color-iris-pulse);
   color: var(--color-iris-pulse);
-  background: rgba(83, 80, 204, 0.06);
 }
 
 /* Cards: white surface, soft violet-tinted edge (no neon) */
 .surface-card {
   background: var(--color-cloud-white);
   border: 1px solid var(--color-ash);
-  border-radius: var(--radius-cards);
-  box-shadow: 0 1px 2px rgba(22, 22, 92, 0.04), 0 8px 24px rgba(22, 22, 92, 0.04);
+  border-radius: 18px;
+  box-shadow: 0 1px 3px rgba(22, 22, 92, 0.035);
 }
 
 /* Primary pill button — Iris Pulse only */
@@ -170,4 +168,17 @@ select:focus:not(:focus-visible) {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-fog);
   background-clip: padding-box;
+}
+
+@media (max-width: 640px) {
+  .text-display-lg {
+    font-size: clamp(2.5rem, 12vw, 4rem);
+  }
+
+  textarea,
+  input,
+  select,
+  button {
+    touch-action: manipulation;
+  }
 }

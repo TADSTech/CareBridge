@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Message, Language, AccessibilityPrefs } from '../../types';
 import { SUPPORTED_LANGUAGES } from '../../services/languages';
 import { SpeechEngine } from '../../services/speechEngine';
@@ -23,7 +23,7 @@ interface PatientViewProps {
   selectedLanguage: Language;
   setSelectedLanguage: (lang: Language) => void;
   messages: Message[];
-  onSendMessage: (text: string, language: Language) => void;
+  onSendMessage: (text: string, language: Language) => Promise<void>;
   isProcessing: boolean;
   prefs: AccessibilityPrefs;
   addToast: (text: string, type?: 'success' | 'error' | 'info') => void;
@@ -41,42 +41,58 @@ export const PatientView: React.FC<PatientViewProps> = ({
   const [inputText, setInputText] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
 
   const currentLang = SUPPORTED_LANGUAGES.find((l) => l.id === selectedLanguage) || SUPPORTED_LANGUAGES[0];
 
-  const toggleRecording = () => {
+  const toggleRecording = async () => {
     if (isRecording) {
-      SpeechEngine.stopListening();
+      recorderRef.current?.stop();
       setIsRecording(false);
-      addToast('Microphone stopped', 'info');
+      addToast('Recording stopped. Transcribing…', 'info');
     } else {
-      setIsRecording(true);
-      addToast(`Listening in ${currentLang.name}... Speak now`, 'info');
-
-      const success = SpeechEngine.startListening(selectedLanguage, {
-        onResult: (transcript) => setInputText(transcript),
-        onError: () => {
-          setIsRecording(false);
-          addToast('Voice input active. Type or use quick sample prompts if mic unavailable.', 'info');
-        },
-        onEnd: () => setIsRecording(false),
-      });
-
-      if (!success) {
-        setTimeout(() => {
-          setInputText(currentLang.sampleInput);
-          setIsRecording(false);
-          addToast(`Captured voice: "${currentLang.sampleInput.substring(0, 30)}..."`, 'success');
-        }, 1800);
-      }
+      if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) { addToast('This browser cannot record audio. Type your message instead.', 'error'); return; }
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const recorder = new MediaRecorder(stream);
+        recorderRef.current = recorder;
+        chunksRef.current = [];
+        recorder.ondataavailable = (event) => { if (event.data.size) chunksRef.current.push(event.data); };
+        recorder.onstop = async () => {
+          stream.getTracks().forEach((track) => track.stop());
+          const blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+          if (blob.size > 10_000_000) { addToast('Recording is over 10 MB. Please record a shorter message.', 'error'); return; }
+          try {
+            const audioBase64 = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onerror = () => reject(new Error('Could not read the recording.'));
+              reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
+              reader.readAsDataURL(blob);
+            });
+            const response = await fetch('/api/asr', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ audioBase64, mimeType: blob.type, language: selectedLanguage }) });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || 'Transcription failed.');
+            setInputText((previous) => [previous, result.transcript].filter(Boolean).join(' '));
+            addToast('Transcript ready. Review it before sending.', 'success');
+          } catch (error) { addToast(error instanceof Error ? error.message : 'Transcription failed. Type your message instead.', 'error'); }
+        };
+        recorder.start();
+        setIsRecording(true);
+        addToast(`Recording in ${currentLang.name}. Tap stop when finished.`, 'info');
+      } catch { addToast('Microphone permission was denied or unavailable. Type your message instead.', 'error'); }
     }
   };
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (!inputText.trim()) return;
     const textToSend = inputText;
     setInputText('');
-    onSendMessage(textToSend, selectedLanguage);
+    try {
+      await onSendMessage(textToSend, selectedLanguage);
+    } catch {
+      setInputText(textToSend);
+    }
   };
 
   const handlePlayVoice = (id: string, text: string, lang: Language) => {
@@ -106,7 +122,7 @@ export const PatientView: React.FC<PatientViewProps> = ({
             </h1>
 
             <p className="text-sm text-fog mt-3 max-w-lg leading-relaxed">
-              Speak or type in your native language. CareBridge will translate your words into a clear medical summary for your healthcare worker.
+              Speak or type in your language. Your words stay visible while the care team gets an intake draft and follow-up questions.
             </p>
           </div>
 
@@ -164,7 +180,7 @@ export const PatientView: React.FC<PatientViewProps> = ({
             {isRecording ? (
               <AudioWaveform active color="violet" bars={16} height="h-8" />
             ) : (
-              <p className="text-xs text-fog">Press the microphone or pick a sample prompt below</p>
+              <p className="text-xs text-fog">Record a short message, then review and edit its transcript before sending</p>
             )}
           </div>
 
@@ -240,7 +256,7 @@ export const PatientView: React.FC<PatientViewProps> = ({
             <div>
               <div className="text-sm font-semibold text-deep-iris">Processing patient input…</div>
               <div className="text-xs text-fog mt-0.5">
-                Translating {currentLang.name} → structuring clinical summary
+                Keeping the patient’s words intact and preparing an intake draft
               </div>
             </div>
           </motion.div>
@@ -288,7 +304,7 @@ export const PatientView: React.FC<PatientViewProps> = ({
                             <Stethoscope className="w-3.5 h-3.5 text-iris-pulse" />
                             <span className="text-deep-iris">Doctor / Healthcare Worker</span>
                             <span className="px-2 py-0.5 rounded-pill bg-iris-pulse/10 text-iris-pulse border border-iris-pulse/25 text-[10px]">
-                              CareBridge Simplified
+                              Clinician response
                             </span>
                           </>
                         )}

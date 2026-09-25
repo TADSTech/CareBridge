@@ -20,31 +20,31 @@ export const DemoScriptModal: React.FC<DemoScriptModalProps> = ({
     {
       num: 1,
       title: 'Patient Language & Voice Entry',
-      description: 'Patient selects Nigerian Pidgin and speaks naturally about symptoms.',
+      description: 'Choose a language, then speak or type a symptom description.',
       targetPerspective: 'patient' as Perspective,
     },
     {
       num: 2,
-      title: 'CareBridge Clinical Structuring',
-      description: 'Natural speech is structured into a SOAP/SBAR clinical summary.',
+      title: 'Prepare an Intake Draft',
+      description: 'CareBridge keeps the patient’s words and adds follow-up questions. It does not diagnose or assess urgency.',
       targetPerspective: 'patient' as Perspective,
     },
     {
       num: 3,
       title: 'Clinician Interface View',
-      description: 'Clinician reviews the English summary and selects a response.',
+      description: 'Clinician reviews the original words and intake draft, then writes a reply.',
       targetPerspective: 'clinician' as Perspective,
     },
     {
       num: 4,
-      title: 'Simplification & Translation',
-      description: 'Medical English is converted into clear patient language.',
+      title: 'Prepare Spoken Reply',
+      description: 'CareBridge keeps the typed English reply. YarnGPT can translate the spoken audio where supported.',
       targetPerspective: 'split' as Perspective,
     },
     {
       num: 5,
       title: 'Patient Audio Playback',
-      description: 'Accessible text-to-speech playback in the patient language.',
+      description: 'Play YarnGPT speech, with browser speech as a fallback when the service is unavailable.',
       targetPerspective: 'patient' as Perspective,
     },
   ];

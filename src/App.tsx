@@ -9,6 +9,7 @@ import { DemoScriptModal } from './components/DemoScriptModal';
 import { AccessibilityModal } from './components/AccessibilityModal';
 import { ToastContainer, ToastMessage } from './components/ui/Toast';
 import { AIEngine } from './services/aiEngine';
+import { ProcessClinicianResponseResult } from './services/aiEngine';
 import { SpeechEngine } from './services/speechEngine';
 
 export function App() {
@@ -43,49 +44,7 @@ export function App() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
-  // Messages consultation thread initialized with killer demo scenario
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: 'msg-001',
-      sender: 'patient',
-      timestamp: '14:32',
-      originalText: 'My chest dey pain me since yesterday, especially when I breathe.',
-      originalLanguage: 'pidgin',
-      translatedText: 'Patient reports persistent chest pain since yesterday, aggravated during deep inspiration.',
-      clinicalSummary: {
-        primaryComplaint: 'Chest Pain (Substernal / Pleuritic)',
-        onsetDuration: 'Onset ~24 hours ago (Yesterday)',
-        exacerbatingFactors: ['Deep breathing / Inspiration', 'Physical exertion'],
-        associatedSymptoms: ['Mild shortness of breath on effort'],
-        vitalsCheck: {
-          temp: '37.1 °C (Normal)',
-          bp: '128/82 mmHg',
-          heartRate: '84 bpm',
-          spo2: '98%',
-        },
-        urgency: 'urgent',
-        recommendedQuestions: [
-          'Have you experienced shortness of breath or dizziness?',
-          'Does the pain radiate to your left arm or jaw?',
-          'Have you had any fever, coughing, or chills?',
-        ],
-        triageNotes:
-          'Requires acute cardiac & pulmonary evaluation. Rule out acute coronary syndrome, pleuritis, or pulmonary infection.',
-        icd10CategoryHint: 'R07.9 (Chest pain, unspecified)',
-      },
-      status: 'delivered',
-    },
-    {
-      id: 'msg-002',
-      sender: 'clinician',
-      timestamp: '14:34',
-      originalText: 'Have you experienced shortness of breath, dizziness, or fever?',
-      originalLanguage: 'pidgin',
-      translatedText: 'You dey find am hard to breathe, or your head dey turn you, or you get fever?',
-      simplifiedText: 'Doctor is asking if breathing is difficult or if you have fever or dizziness.',
-      status: 'delivered',
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
 
   // Execute patient message input
   const handleSendMessage = async (text: string, language: Language) => {
@@ -100,7 +59,7 @@ export function App() {
 
     setMessages((prev) => [...prev, newPatientMsg]);
     setIsProcessing(true);
-    addToast('CareBridge AI is translating speech & structuring clinical summary...', 'info');
+    addToast('Preparing an intake draft from the patient’s own words…', 'info');
 
     try {
       const result = await AIEngine.processPatientInput(text, language);
@@ -119,19 +78,22 @@ export function App() {
       );
 
       setIsProcessing(false);
-      addToast('Clinical summary generated for doctor!', 'success');
+      addToast('Intake draft ready. Clinician review is needed.', 'success');
     } catch (err) {
+      setMessages((prev) => prev.filter((msg) => msg.id !== newPatientMsg.id));
       setIsProcessing(false);
-      addToast('Error processing input. Retrying offline engine.', 'error');
+      const message = err instanceof Error ? err.message : 'Text translation failed. Check the Groq API setup and try again.';
+      addToast(message, 'error');
+      throw err;
     }
   };
 
   // Execute clinician response input
-  const handleSendClinicianResponse = async (text: string) => {
+  const handleSendClinicianResponse = async (text: string, prepared?: ProcessClinicianResponseResult) => {
     setIsProcessing(true);
 
     try {
-      const result = await AIEngine.processClinicianResponse(text, selectedLanguage);
+      const result = prepared || await AIEngine.processClinicianResponse(text, selectedLanguage);
 
       const newClinicianMsg: Message = {
         id: `msg-${Date.now()}`,
@@ -153,7 +115,9 @@ export function App() {
       }
     } catch (err) {
       setIsProcessing(false);
-      addToast('Could not deliver response.', 'error');
+      const message = err instanceof Error ? err.message : 'Text translation failed. Check the Groq API setup and try again.';
+      addToast(message, 'error');
+      throw err;
     }
   };
 
@@ -172,7 +136,7 @@ export function App() {
         setIsProcessing(true);
         setTimeout(() => {
           setIsProcessing(false);
-          addToast('Step 2: CareBridge structures SOAP clinical summary', 'success');
+          addToast('Step 2: CareBridge prepares an intake draft', 'success');
         }, 600);
         break;
       case 3:
@@ -181,7 +145,7 @@ export function App() {
         break;
       case 4:
         setPerspective('split');
-        addToast('Step 4: CareBridge simplifies response into Pidgin', 'info');
+        addToast('Step 4: Clinician prepares a spoken reply', 'info');
         break;
       case 5:
         setPerspective('patient');

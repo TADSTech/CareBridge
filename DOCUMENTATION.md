@@ -6,8 +6,8 @@ AI-powered communication layer between patients and healthcare workers. React + 
 
 | Tool | Notes |
 |------|--------|
-| **[Bun](https://bun.sh)** ≥ 1.1 | Package manager and script runner. **Do not use npm, yarn, or pnpm.** |
-| Node.js (optional) | Only if your editor/tools expect Node; Vite runs under Bun fine. |
+| **[Bun](https://bun.sh)** ≥ 1.1 | Package manager and frontend script runner. **Do not use npm, yarn, or pnpm.** |
+| **Node.js** ≥ 20.6 | Runs the API for Groq text processing, YarnGPT transcription, and configured speech providers. |
 
 Install Bun:
 
@@ -23,6 +23,7 @@ powershell -c "irm bun.sh/install.ps1 | iex"
 
 ```bash
 bun install          # install dependencies (creates/updates bun.lock)
+bun run dev:api      # start the local API on port 3001 (requires .env)
 bun run dev          # start dev server → http://localhost:3000
 ```
 
@@ -35,6 +36,7 @@ All scripts run via Bun:
 | Command | What it does |
 |---------|----------------|
 | `bun install` | Install/refresh dependencies from `bun.lock` |
+| `bun run dev:api` | Groq text processing, YarnGPT ASR, and 9jaLingo/Azure/YarnGPT speech routes (port **3001**) |
 | `bun run dev` | Vite dev server (port **3000**, host exposed) |
 | `bun run build` | Typecheck (`tsc`) + production build → `dist/` (includes service worker + PWA manifest) |
 | `bun run preview` | Serve the production build locally |

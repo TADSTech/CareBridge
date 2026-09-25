@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Message, Language, ClinicalSummary, PatientProfile } from '../../types';
 import { SUPPORTED_LANGUAGES } from '../../services/languages';
-import { AIEngine } from '../../services/aiEngine';
+import { AIEngine, ProcessClinicianResponseResult } from '../../services/aiEngine';
 import { SpeechEngine } from '../../services/speechEngine';
 import {
   Stethoscope,
@@ -21,7 +21,7 @@ import { motion } from 'framer-motion';
 interface ClinicianViewProps {
   messages: Message[];
   selectedLanguage: Language;
-  onSendClinicianResponse: (text: string) => void;
+  onSendClinicianResponse: (text: string, prepared?: ProcessClinicianResponseResult) => Promise<void>;
   isProcessing: boolean;
   addToast: (text: string, type?: 'success' | 'error' | 'info') => void;
 }
@@ -38,46 +38,80 @@ export const ClinicianView: React.FC<ClinicianViewProps> = ({
     simplifiedText: string;
     translatedText: string;
   } | null>(null);
+  const [previewFor, setPreviewFor] = useState<{ text: string; language: Language } | null>(null);
   const [isPreviewing, setIsPreviewing] = useState(false);
+  const previewTimer = useRef<number | null>(null);
+  const previewRequest = useRef(0);
   const [activeTab, setActiveTab] = useState<'consultation' | 'simplifier'>('consultation');
   const [jargonInput, setJargonInput] = useState('Hypertension requiring ACE inhibitor dosage titration.');
   const [jargonOutput, setJargonOutput] = useState<{ simplified: string; translated: string } | null>(null);
 
   const activePatient: PatientProfile = {
     id: 'PT-89421',
-    name: 'Emeka Nwosu',
-    age: 42,
-    gender: 'Male',
+    name: 'Demo patient',
+    age: 0,
+    gender: 'Profile not provided',
     preferredLanguage: selectedLanguage,
-    location: 'Surulere Clinic, Lagos',
-    bloodGroup: 'O+',
-    allergies: ['Penicillin'],
-    chronicConditions: ['None reported'],
-    recentVisits: 2,
+    location: 'Not provided',
+    bloodGroup: 'Not provided',
+    allergies: [],
+    chronicConditions: [],
+    recentVisits: 0,
   };
 
   const patientMessages = messages.filter((m) => m.sender === 'patient');
   const latestPatientMessage = patientMessages[patientMessages.length - 1];
   const summary: ClinicalSummary | undefined = latestPatientMessage?.clinicalSummary;
 
-  const handleGeneratePreview = async (text: string) => {
+  useEffect(() => () => {
+    if (previewTimer.current !== null) window.clearTimeout(previewTimer.current);
+  }, []);
+
+  const handleGeneratePreview = (text: string) => {
     setClinicianText(text);
+    if (previewTimer.current !== null) window.clearTimeout(previewTimer.current);
+    const requestId = ++previewRequest.current;
     if (!text.trim()) {
       setPreviewTranslation(null);
+      setIsPreviewing(false);
       return;
     }
+    setPreviewTranslation(null);
+    setPreviewFor(null);
     setIsPreviewing(true);
-    const result = await AIEngine.processClinicianResponse(text, selectedLanguage);
-    setPreviewTranslation(result);
-    setIsPreviewing(false);
+    previewTimer.current = window.setTimeout(async () => {
+      try {
+        const result = await AIEngine.processClinicianResponse(text, selectedLanguage);
+        if (requestId === previewRequest.current) {
+          setPreviewTranslation(result);
+          setPreviewFor({ text, language: selectedLanguage });
+        }
+      } catch (error) {
+        if (requestId === previewRequest.current) {
+          addToast(error instanceof Error ? error.message : 'Text translation failed.', 'error');
+        }
+      } finally {
+        if (requestId === previewRequest.current) setIsPreviewing(false);
+      }
+    }, 500);
   };
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (!clinicianText.trim()) return;
-    onSendClinicianResponse(clinicianText);
-    setClinicianText('');
-    setPreviewTranslation(null);
-    addToast('Response translated & sent to patient!', 'success');
+    previewRequest.current += 1;
+    if (previewTimer.current !== null) window.clearTimeout(previewTimer.current);
+    try {
+      const prepared = previewFor?.text === clinicianText && previewFor.language === selectedLanguage
+        ? previewTranslation || undefined
+        : undefined;
+      await onSendClinicianResponse(clinicianText, prepared);
+      setClinicianText('');
+      setPreviewTranslation(null);
+      setPreviewFor(null);
+      addToast(`Response sent. Spoken language: ${currentLang.name}.`, 'success');
+    } catch {
+      // Keep the draft available so the clinician can retry.
+    }
   };
 
   const handleTestSimplifier = async () => {
@@ -109,7 +143,7 @@ export const ClinicianView: React.FC<ClinicianViewProps> = ({
               </span>
             </div>
             <p className="text-xs text-fog mt-0.5">
-              CareBridge summarizes patient input into medical English and translates your response back.
+              Review the patient’s words, then send a reply as text and spoken audio in their selected language.
             </p>
           </div>
         </div>
@@ -119,7 +153,7 @@ export const ClinicianView: React.FC<ClinicianViewProps> = ({
             Case & Summary
           </button>
           <button onClick={() => setActiveTab('simplifier')} className={tabBtn(activeTab === 'simplifier')}>
-            Jargon Simplifier
+            Voice preview
           </button>
         </div>
       </div>
@@ -129,9 +163,9 @@ export const ClinicianView: React.FC<ClinicianViewProps> = ({
           <div className="flex items-start gap-3 border-b border-ash pb-3">
             <Zap className="w-5 h-5 text-iris-pulse shrink-0 mt-0.5" />
             <div>
-              <h2 className="text-base font-semibold text-deep-iris">Medical Jargon Converter</h2>
+              <h2 className="text-base font-semibold text-deep-iris">Patient voice preview</h2>
               <p className="text-xs text-fog">
-                Convert clinical instructions into patient language in {currentLang.name}.
+                Review the English reply that will be spoken in {currentLang.name}. YarnGPT provides translated audio where supported.
               </p>
             </div>
           </div>
@@ -139,31 +173,31 @@ export const ClinicianView: React.FC<ClinicianViewProps> = ({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-3">
               <label className="text-xs font-semibold text-deep-iris block uppercase tracking-caption">
-                Clinical terminology (English)
+                Clinician’s reply (English)
               </label>
               <textarea
                 rows={4}
                 value={jargonInput}
                 onChange={(e) => setJargonInput(e.target.value)}
                 className="w-full bg-pearl border border-ash rounded-input p-3 text-sm text-deep-iris focus:outline-none focus:border-iris-pulse"
-                placeholder="Enter clinical instructions or diagnosis..."
+                placeholder="Type a short reply for the patient..."
               />
               <button onClick={handleTestSimplifier} className="btn-primary w-full text-xs">
                 <Sparkles className="w-4 h-4" />
-                <span>Simplify & Translate to {currentLang.name}</span>
+                <span>Preview spoken reply in {currentLang.name}</span>
               </button>
             </div>
 
             <div className="bg-pearl p-4 rounded-card border border-ash space-y-4">
               <div className="text-xs font-semibold text-iris-pulse uppercase tracking-caption flex items-center gap-2">
                 <Globe className="w-3.5 h-3.5" />
-                <span>Output ({currentLang.name})</span>
+                <span>Audio preview ({currentLang.name})</span>
               </div>
 
               {jargonOutput ? (
                 <div className="space-y-3">
                   <div className="p-3 rounded-xl bg-cloud-white border border-ash">
-                    <div className="text-[11px] text-fog font-medium mb-1">Target language:</div>
+                    <div className="text-[11px] text-fog font-medium mb-1">Patient-language translation:</div>
                     <p className="text-sm font-semibold text-deep-iris">“{jargonOutput.translated}”</p>
                   </div>
                   <div className="p-3 rounded-xl bg-cloud-white border border-ash">
@@ -173,7 +207,7 @@ export const ClinicianView: React.FC<ClinicianViewProps> = ({
                 </div>
               ) : (
                 <p className="text-xs text-fog text-center py-8">
-                  Run simplify to preview patient-facing output.
+                  Enter a reply to see its source text and selected audio language.
                 </p>
               )}
             </div>
@@ -191,7 +225,7 @@ export const ClinicianView: React.FC<ClinicianViewProps> = ({
                 <div>
                   <h3 className="text-[15px] font-semibold text-deep-iris">{activePatient.name}</h3>
                   <p className="text-xs text-fog">
-                    {activePatient.age} yrs · {activePatient.gender} · ID {activePatient.id}
+                    {activePatient.age > 0 ? `${activePatient.age} yrs` : 'Age not provided'} · {activePatient.gender} · {activePatient.id}
                   </p>
                 </div>
               </div>
@@ -211,7 +245,7 @@ export const ClinicianView: React.FC<ClinicianViewProps> = ({
                 </div>
                 <div className="flex justify-between py-1">
                   <span className="text-fog">Allergies</span>
-                  <span className="text-red-600 font-medium">{activePatient.allergies.join(', ')}</span>
+                  <span className="text-deep-iris font-medium">{activePatient.allergies.join(', ') || 'Not provided'}</span>
                 </div>
               </div>
 
@@ -225,11 +259,11 @@ export const ClinicianView: React.FC<ClinicianViewProps> = ({
                 }`}
               >
                 <AlertTriangle className="w-4 h-4 shrink-0" />
-                <span>Triage: {(summary?.urgency || 'routine').toUpperCase()}</span>
+                <span>{summary?.urgency === 'unassessed' ? 'Urgency not assessed' : `Triage: ${(summary?.urgency || 'unassessed').toUpperCase()}`}</span>
               </div>
             </div>
 
-            {summary?.vitalsCheck && (
+            {summary?.vitalsCheck && Object.values(summary.vitalsCheck).some(Boolean) && (
               <div className="surface-card p-5 space-y-3">
                 <div className="flex items-center gap-2 text-xs font-semibold text-deep-iris uppercase tracking-caption">
                   <Activity className="w-4 h-4 text-iris-pulse" />
@@ -237,10 +271,10 @@ export const ClinicianView: React.FC<ClinicianViewProps> = ({
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   {[
-                    ['Body Temp', summary.vitalsCheck.temp || '37.1 °C'],
-                    ['Blood Pressure', summary.vitalsCheck.bp || '128/82 mmHg'],
-                    ['Heart Rate', summary.vitalsCheck.heartRate || '84 bpm'],
-                    ['SpO₂', summary.vitalsCheck.spo2 || '98%'],
+                    ['Body Temp', summary.vitalsCheck.temp],
+                    ['Blood Pressure', summary.vitalsCheck.bp],
+                    ['Heart Rate', summary.vitalsCheck.heartRate],
+                    ['SpO₂', summary.vitalsCheck.spo2],
                   ].map(([label, value]) => (
                     <div key={label} className="bg-pearl p-3 rounded-xl border border-ash">
                       <div className="text-[10px] text-fog">{label}</div>
@@ -261,7 +295,7 @@ export const ClinicianView: React.FC<ClinicianViewProps> = ({
                   <h2 className="text-base font-semibold text-deep-iris">Structured Clinical Summary</h2>
                 </div>
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded-pill bg-pearl text-deep-iris border border-ash">
-                  {summary?.icd10CategoryHint || 'SOAP Intake'}
+                  {summary?.icd10CategoryHint || 'Intake draft'}
                 </span>
               </div>
 
@@ -303,6 +337,14 @@ export const ClinicianView: React.FC<ClinicianViewProps> = ({
 
                   {latestPatientMessage && (
                     <div className="pt-1">
+                      {latestPatientMessage.translatedText && (
+                        <div className="mb-3 space-y-1">
+                          <div className="text-[11px] font-semibold text-fog">English translation of patient’s words</div>
+                          <div className="bg-cloud-white p-3 rounded-xl border border-ash text-xs text-deep-iris">
+                            “{latestPatientMessage.translatedText}”
+                          </div>
+                        </div>
+                      )}
                       <div className="text-[11px] font-semibold text-fog mb-1 flex items-center justify-between gap-2">
                         <span>Original patient speech ({currentLang.name})</span>
                         <button
@@ -376,7 +418,7 @@ export const ClinicianView: React.FC<ClinicianViewProps> = ({
                   <div className="flex items-center justify-between text-xs font-semibold text-iris-pulse">
                     <span className="flex items-center gap-1.5">
                       <Sparkles className="w-3.5 h-3.5" />
-                      Live translation → {currentLang.name}
+                      Spoken audio → {currentLang.name}
                     </span>
                     {isPreviewing && <RefreshCw className="w-3 h-3 animate-spin" />}
                   </div>

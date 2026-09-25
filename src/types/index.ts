@@ -25,7 +25,7 @@ export interface ClinicalSummary {
     heartRate?: string;
     spo2?: string;
   };
-  urgency: UrgencyLevel;
+  urgency: UrgencyLevel | 'unassessed';
   recommendedQuestions: string[];
   triageNotes: string;
   icd10CategoryHint?: string;

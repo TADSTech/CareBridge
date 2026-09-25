@@ -2,14 +2,15 @@ import React from 'react';
 import { PatientView } from './PatientView/PatientView';
 import { ClinicianView } from './ClinicianView/ClinicianView';
 import { Message, Language, AccessibilityPrefs } from '../types';
+import { ProcessClinicianResponseResult } from '../services/aiEngine';
 import { User, Stethoscope, ArrowRightLeft } from 'lucide-react';
 
 interface SplitViewProps {
   selectedLanguage: Language;
   setSelectedLanguage: (lang: Language) => void;
   messages: Message[];
-  onSendMessage: (text: string, language: Language) => void;
-  onSendClinicianResponse: (text: string) => void;
+  onSendMessage: (text: string, language: Language) => Promise<void>;
+  onSendClinicianResponse: (text: string, prepared?: ProcessClinicianResponseResult) => Promise<void>;
   isProcessing: boolean;
   prefs: AccessibilityPrefs;
   addToast: (text: string, type?: 'success' | 'error' | 'info') => void;
@@ -32,11 +33,11 @@ export const SplitView: React.FC<SplitViewProps> = ({
           <ArrowRightLeft className="w-4 h-4 text-iris-pulse shrink-0" />
           <span className="font-semibold">Live Split View</span>
           <span className="text-fog hidden md:inline truncate">
-            Patient ({selectedLanguage.toUpperCase()}) ↔ Clinician (Medical English), bi-directional in real time.
+            Patient’s words stay intact; clinician replies can be spoken in {selectedLanguage}.
           </span>
         </div>
         <div className="flex items-center gap-1.5 text-iris-pulse font-medium shrink-0">
-          <span>CareBridge AI</span>
+          <span>YarnGPT voice</span>
         </div>
       </div>
 
