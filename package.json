@@ -13,6 +13,7 @@
     "pitch": "bun scripts/render-pitch.mjs"
   },
   "dependencies": {
+    "@neondatabase/serverless": "^1.1.0",
     "clsx": "^2.1.1",
     "framer-motion": "^11.18.2",
     "lucide-react": "^0.474.0",

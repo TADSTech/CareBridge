@@ -1,6 +1,9 @@
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { resolve, sep } from 'node:path';
+import { createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
+import { promisify } from 'node:util';
+import { neon } from '@neondatabase/serverless';
 
 const port = Number(process.env.API_PORT || 3001);
 const yarnUrl = 'https://api.yarngpt.ai/api/v1/streaming/conversation';
@@ -9,7 +12,8 @@ const ninejaApiKey = process.env.NAIJALINGO_API_KEY || process.env.NINEJALINGO_A
 const languageCodes = { english: 'en', yoruba: 'yo', hausa: 'ha', igbo: 'ig', swahili: 'sw' };
 const languageNames = {
   english: 'English', pidgin: 'Nigerian Pidgin', yoruba: 'Yorùbá',
-  hausa: 'Hausa', igbo: 'Igbo', swahili: 'Kiswahili',
+  hausa: 'Hausa', igbo: 'Igbo', swahili: 'Kiswahili', afrikaans: 'Afrikaans',
+  amharic: 'Amharic', zulu: 'isiZulu',
 };
 
 const nationalVoice = {
@@ -18,8 +22,107 @@ const nationalVoice = {
   hausa: { provider: '9jalingo', lang: 'ha', voice: 'aisha_ha' },
   igbo: { provider: '9jalingo', lang: 'ig', voice: 'adaeze_ig' },
   swahili: { provider: 'azure', voice: 'sw-KE-ZuriNeural' },
+  afrikaans: { provider: 'azure', voice: 'af-ZA-AdriNeural' },
+  amharic: { provider: 'azure', voice: 'am-ET-MekdesNeural' },
+  zulu: { provider: 'azure', voice: 'zu-ZA-ThandoNeural' },
   english: { provider: 'azure', voice: process.env.AZURE_ENGLISH_VOICE || 'en-NG-EzinneNeural' },
 };
+const azureRecognitionLocale = { swahili: 'sw-KE', afrikaans: 'af-ZA', amharic: 'am-ET', zulu: 'zu-ZA' };
+
+const database = process.env.DATABASE_URL ? neon(process.env.DATABASE_URL) : null;
+const scrypt = promisify(scryptCallback);
+const sessionCookieName = 'carebridge_session';
+const sessionLifetimeSeconds = 7 * 24 * 60 * 60;
+let accountSchemaReady;
+const authRateLimits = new Map();
+
+async function ensureAccountSchema() {
+  if (!database) throw new Error('Database is not configured. Add a server-side DATABASE_URL.');
+  if (!accountSchemaReady) accountSchemaReady = (async () => {
+    await database`CREATE TABLE IF NOT EXISTS carebridge_users (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      email text NOT NULL UNIQUE,
+      password_salt text NOT NULL,
+      password_hash text NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )`;
+    await database`CREATE TABLE IF NOT EXISTS carebridge_sessions (
+      token_hash text PRIMARY KEY,
+      user_id uuid NOT NULL REFERENCES carebridge_users(id) ON DELETE CASCADE,
+      expires_at timestamptz NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )`;
+    await database`CREATE INDEX IF NOT EXISTS carebridge_sessions_expiry_idx ON carebridge_sessions(expires_at)`;
+    await database`CREATE TABLE IF NOT EXISTS consultations (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      owner_id uuid NOT NULL REFERENCES carebridge_users(id) ON DELETE CASCADE,
+      title text NOT NULL DEFAULT 'Consultation',
+      messages jsonb NOT NULL DEFAULT '[]'::jsonb,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT carebridge_consultations_messages_array CHECK (jsonb_typeof(messages) = 'array'),
+      CONSTRAINT carebridge_consultations_one_per_owner UNIQUE(owner_id)
+    )`;
+  })().catch((error) => { accountSchemaReady = undefined; throw error; });
+  return accountSchemaReady;
+}
+
+function hashSessionToken(token) {
+  return createHash('sha256').update(token).digest('hex');
+}
+
+function readCookie(request, name) {
+  const raw = request.headers.cookie || '';
+  for (const part of raw.split(';')) {
+    const [key, ...value] = part.trim().split('=');
+    if (key === name) return value.join('=');
+  }
+  return '';
+}
+
+function setSessionCookie(response, token) {
+  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+  response.setHeader('Set-Cookie', `${sessionCookieName}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${sessionLifetimeSeconds}${secure}`);
+}
+
+function clearSessionCookie(response) {
+  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+  response.setHeader('Set-Cookie', `${sessionCookieName}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${secure}`);
+}
+
+function sendJson(response, status, body) {
+  response.writeHead(status, { 'content-type': 'application/json' });
+  response.end(JSON.stringify(body));
+}
+
+function isSameSiteRequest(request) {
+  const site = request.headers['sec-fetch-site'];
+  return !site || site === 'same-origin';
+}
+
+async function derivePasswordHash(password, salt) {
+  const result = await scrypt(password, salt, 64, { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 });
+  return Buffer.from(result).toString('base64url');
+}
+
+async function createAccountSession(response, user) {
+  const token = randomBytes(32).toString('base64url');
+  const expiresAt = new Date(Date.now() + sessionLifetimeSeconds * 1000);
+  await database`DELETE FROM carebridge_sessions WHERE expires_at < now()`;
+  await database`INSERT INTO carebridge_sessions (token_hash, user_id, expires_at)
+    VALUES (${hashSessionToken(token)}, ${user.id}, ${expiresAt.toISOString()})`;
+  setSessionCookie(response, token);
+  return { id: user.id, email: user.email };
+}
+
+async function authenticatedUser(request) {
+  const token = readCookie(request, sessionCookieName);
+  if (!token) return null;
+  const rows = await database`SELECT u.id, u.email FROM carebridge_sessions s
+    JOIN carebridge_users u ON u.id = s.user_id
+    WHERE s.token_hash = ${hashSessionToken(token)} AND s.expires_at > now() LIMIT 1`;
+  return rows[0] || null;
+}
 
 async function providerFetch(url, options, ms = 90_000) {
   const controller = new AbortController();
@@ -64,11 +167,32 @@ async function createVoice(text, language) {
   throw new Error(`No voice provider configured for ${language}.`);
 }
 
-async function readJson(request) {
+async function transcribeWithAzure(audioBytes, language) {
+  if (!process.env.AZURE_SPEECH_KEY || !process.env.AZURE_SPEECH_REGION) throw new Error('Azure transcription is not configured.');
+  const locale = azureRecognitionLocale[language];
+  const endpoint = `https://${process.env.AZURE_SPEECH_REGION}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=${locale}&format=simple`;
+  const response = await providerFetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Ocp-Apim-Subscription-Key': process.env.AZURE_SPEECH_KEY,
+      'Content-Type': 'audio/wav; codecs=audio/pcm; samplerate=16000',
+      Accept: 'application/json',
+    },
+    body: audioBytes,
+  }, 60_000);
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(`Azure transcription request failed (${response.status}).`);
+  if (result.RecognitionStatus !== 'Success' || typeof result.DisplayText !== 'string' || !result.DisplayText.trim()) {
+    throw new Error('No speech was recognized. Try again or type the message.');
+  }
+  return result.DisplayText.trim();
+}
+
+async function readJson(request, limit = 24_000) {
   let body = '';
   for await (const chunk of request) {
     body += chunk;
-    if (body.length > 24_000) throw new Error('Request body is too large.');
+    if (body.length > limit) throw new Error('Request body is too large.');
   }
   return JSON.parse(body);
 }
@@ -152,10 +276,92 @@ const server = createServer(async (request, response) => {
   }
   if (request.method === 'GET' && url.pathname === '/api/health') {
     response.writeHead(200, { 'content-type': 'application/json' });
-    response.end(JSON.stringify({ ok: true, yarnConfigured: Boolean(process.env.YARNGPT_API_KEY), textConfigured: Boolean(process.env.GROQ_API_KEY), ninejaConfigured: Boolean(ninejaApiKey), azureConfigured: Boolean(process.env.AZURE_SPEECH_KEY && process.env.AZURE_SPEECH_REGION) }));
+    response.end(JSON.stringify({ ok: true, yarnConfigured: Boolean(process.env.YARNGPT_API_KEY), textConfigured: Boolean(process.env.GROQ_API_KEY), ninejaConfigured: Boolean(ninejaApiKey), azureConfigured: Boolean(process.env.AZURE_SPEECH_KEY && process.env.AZURE_SPEECH_REGION), accountsConfigured: Boolean(database) }));
     return;
   }
   if (process.env.NODE_ENV === 'production' && !url.pathname.startsWith('/api/')) return;
+  const authPath = ['/api/auth/sign-up', '/api/auth/sign-in', '/api/auth/sign-out', '/api/auth/me'].includes(url.pathname);
+  const consultationPath = url.pathname === '/api/consultation' || url.pathname.startsWith('/api/consultation/');
+  if (authPath || consultationPath) {
+    try {
+      if (!database) { sendJson(response, 503, { error: 'Accounts are not configured. Add DATABASE_URL on the server and enable VITE_ACCOUNTS_ENABLED.' }); return; }
+      await ensureAccountSchema();
+      if (!isSameSiteRequest(request)) { sendJson(response, 403, { error: 'This request was not allowed.' }); return; }
+      if (authPath && ['POST'].includes(request.method)) {
+        const now = Date.now();
+        const clientIp = request.headers['x-forwarded-for']?.split(',')[0]?.trim() || request.socket.remoteAddress || 'unknown';
+        const key = `${clientIp}:auth`;
+        const recent = (authRateLimits.get(key) || []).filter((time) => now - time < 60_000);
+        if (recent.length >= 8) { sendJson(response, 429, { error: 'Too many sign-in attempts. Please wait a minute.' }); return; }
+        recent.push(now); authRateLimits.set(key, recent);
+      }
+
+      if (request.method === 'POST' && url.pathname === '/api/auth/sign-up') {
+        const { email, password } = await readJson(request);
+        const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail) || typeof password !== 'string' || password.length < 10 || password.length > 128) {
+          sendJson(response, 400, { error: 'Enter a valid email and a password of 10 to 128 characters.' }); return;
+        }
+        const salt = randomBytes(16).toString('base64url');
+        const passwordHash = await derivePasswordHash(password, salt);
+        const rows = await database`INSERT INTO carebridge_users (email, password_salt, password_hash)
+          VALUES (${normalizedEmail}, ${salt}, ${passwordHash}) RETURNING id, email`;
+        const user = await createAccountSession(response, rows[0]);
+        sendJson(response, 201, { user }); return;
+      }
+
+      if (request.method === 'POST' && url.pathname === '/api/auth/sign-in') {
+        const { email, password } = await readJson(request);
+        const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+        const rows = await database`SELECT id, email, password_salt, password_hash FROM carebridge_users WHERE email = ${normalizedEmail} LIMIT 1`;
+        if (typeof password !== 'string' || password.length > 128) { sendJson(response, 401, { error: 'Email or password is incorrect.' }); return; }
+        const account = rows[0];
+        const salt = account?.password_salt || 'carebridge-invalid-account-salt';
+        const candidate = Buffer.from(await derivePasswordHash(password, salt), 'base64url');
+        const saved = Buffer.from(account?.password_hash || Buffer.alloc(64).toString('base64url'), 'base64url');
+        if (!account || candidate.length !== saved.length || !timingSafeEqual(candidate, saved)) { sendJson(response, 401, { error: 'Email or password is incorrect.' }); return; }
+        const user = await createAccountSession(response, rows[0]);
+        sendJson(response, 200, { user }); return;
+      }
+
+      if (request.method === 'POST' && url.pathname === '/api/auth/sign-out') {
+        const token = readCookie(request, sessionCookieName);
+        if (token) await database`DELETE FROM carebridge_sessions WHERE token_hash = ${hashSessionToken(token)}`;
+        clearSessionCookie(response); sendJson(response, 200, { ok: true }); return;
+      }
+
+      if (request.method === 'GET' && url.pathname === '/api/auth/me') {
+        const user = await authenticatedUser(request);
+        if (!user) { sendJson(response, 401, { error: 'Sign in to continue.' }); return; }
+        sendJson(response, 200, { user }); return;
+      }
+
+      const user = await authenticatedUser(request);
+      if (!user) { sendJson(response, 401, { error: 'Sign in to continue.' }); return; }
+      if (request.method === 'GET' && url.pathname === '/api/consultation') {
+        let rows = await database`SELECT id, messages FROM consultations WHERE owner_id = ${user.id} LIMIT 1`;
+        if (!rows[0]) rows = await database`INSERT INTO consultations (owner_id, title, messages)
+          VALUES (${user.id}, 'Consultation', '[]'::jsonb) RETURNING id, messages`;
+        sendJson(response, 200, { id: rows[0].id, messages: Array.isArray(rows[0].messages) ? rows[0].messages : [] }); return;
+      }
+      const consultationId = url.pathname.match(/^\/api\/consultation\/([0-9a-f-]{36})$/i)?.[1];
+      if (request.method === 'PUT' && consultationId) {
+        const { messages } = await readJson(request, 250_000);
+        if (!Array.isArray(messages) || messages.length > 500 || Buffer.byteLength(JSON.stringify(messages)) > 200_000) {
+          sendJson(response, 400, { error: 'Consultation is too large or invalid.' }); return;
+        }
+        const rows = await database`UPDATE consultations SET messages = ${JSON.stringify(messages)}::jsonb, updated_at = now()
+          WHERE id = ${consultationId} AND owner_id = ${user.id} RETURNING id`;
+        if (!rows.length) { sendJson(response, 404, { error: 'Consultation not found.' }); return; }
+        sendJson(response, 200, { ok: true }); return;
+      }
+      sendJson(response, 404, { error: 'Not found.' }); return;
+    } catch (error) {
+      const status = error?.code === '23505' ? 409 : 500;
+      const message = status === 409 ? 'An account with this email already exists.' : 'Account service could not complete the request.';
+      sendJson(response, status, { error: message }); return;
+    }
+  }
   if (request.method === 'POST' && url.pathname === '/api/asr') {
     try {
       if (!process.env.YARNGPT_API_KEY) throw new Error('YarnGPT transcription is not configured. Type your message or configure YARNGPT_API_KEY.');
@@ -163,6 +369,12 @@ const server = createServer(async (request, response) => {
       if (typeof audioBase64 !== 'string' || !Object.hasOwn(languageNames, language)) throw new Error('Invalid audio or language.');
       const bytes = Buffer.from(audioBase64, 'base64');
       if (!bytes.length || bytes.length > 10_000_000) throw new Error('Audio upload is empty or larger than 10 MB.');
+      if (Object.hasOwn(azureRecognitionLocale, language)) {
+        if (!String(mimeType || '').toLowerCase().includes('wav')) throw new Error('This language requires a 16 kHz WAV recording. Try again or type your message.');
+        const transcript = await transcribeWithAzure(bytes, language);
+        sendJson(response, 200, { transcript });
+        return;
+      }
       const form = new FormData();
       form.append('file', new Blob([bytes], { type: mimeType || 'audio/webm' }), 'patient-audio.webm');
       const started = await providerFetch('https://api.yarngpt.ai/api/v1/asr', { method: 'POST', headers: { Authorization: `Bearer ${process.env.YARNGPT_API_KEY}`, 'Idempotency-Key': crypto.randomUUID() }, body: form });

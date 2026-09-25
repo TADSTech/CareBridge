@@ -2,6 +2,42 @@ import React, { useRef, useState } from 'react';
 import { Message, Language, AccessibilityPrefs } from '../../types';
 import { SUPPORTED_LANGUAGES } from '../../services/languages';
 import { SpeechEngine } from '../../services/speechEngine';
+
+const AZURE_TRANSCRIPTION_LANGUAGES = new Set(['swahili', 'afrikaans', 'amharic', 'zulu']);
+
+async function toAzureWav16k(blob: Blob): Promise<Blob> {
+  const context = new AudioContext();
+  try {
+    const decoded = await context.decodeAudioData(await blob.arrayBuffer());
+    const mono = new Float32Array(decoded.length);
+    for (let channel = 0; channel < decoded.numberOfChannels; channel++) {
+      const samples = decoded.getChannelData(channel);
+      for (let i = 0; i < samples.length; i++) mono[i] += samples[i] / decoded.numberOfChannels;
+    }
+    const sampleRate = 16000;
+    const outputLength = Math.ceil(mono.length * sampleRate / decoded.sampleRate);
+    const pcm = new ArrayBuffer(44 + outputLength * 2);
+    const view = new DataView(pcm);
+    const write = (offset: number, value: string) => Array.from(value).forEach((char, index) => view.setUint8(offset + index, char.charCodeAt(0)));
+    write(0, 'RIFF'); view.setUint32(4, 36 + outputLength * 2, true); write(8, 'WAVE');
+    write(12, 'fmt '); view.setUint32(16, 16, true); view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true); view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+    write(36, 'data'); view.setUint32(40, outputLength * 2, true);
+    const ratio = decoded.sampleRate / sampleRate;
+    for (let i = 0; i < outputLength; i++) {
+      const position = i * ratio;
+      const lower = Math.floor(position);
+      const upper = Math.min(lower + 1, mono.length - 1);
+      const fraction = position - lower;
+      const sample = Math.max(-1, Math.min(1, mono[lower] * (1 - fraction) + mono[upper] * fraction));
+      view.setInt16(44 + i * 2, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+    }
+    return new Blob([pcm], { type: 'audio/wav' });
+  } finally {
+    await context.close();
+  }
+}
 import { AudioWaveform } from '../ui/AudioWaveform';
 import {
   Mic,
@@ -61,9 +97,13 @@ export const PatientView: React.FC<PatientViewProps> = ({
         recorder.ondataavailable = (event) => { if (event.data.size) chunksRef.current.push(event.data); };
         recorder.onstop = async () => {
           stream.getTracks().forEach((track) => track.stop());
-          const blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+          let blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' });
           if (blob.size > 10_000_000) { addToast('Recording is over 10 MB. Please record a shorter message.', 'error'); return; }
           try {
+            if (AZURE_TRANSCRIPTION_LANGUAGES.has(selectedLanguage)) {
+              blob = await toAzureWav16k(blob);
+              if (blob.size > 10_000_000) { addToast('Converted audio is over 10 MB. Please record a shorter message.', 'error'); return; }
+            }
             const audioBase64 = await new Promise<string>((resolve, reject) => {
               const reader = new FileReader();
               reader.onerror = () => reject(new Error('Could not read the recording.'));
@@ -155,7 +195,7 @@ export const PatientView: React.FC<PatientViewProps> = ({
         <div className="flex flex-col items-center text-center space-y-5">
           <button
             onClick={toggleRecording}
-            disabled={isProcessing || (selectedLanguage === 'swahili' && !isRecording)}
+            disabled={isProcessing}
             aria-label={isRecording ? 'Stop recording' : 'Start voice recording'}
             className={`w-20 h-20 rounded-full flex flex-col items-center justify-center transition-colors border-2 ${
               isRecording
@@ -180,11 +220,7 @@ export const PatientView: React.FC<PatientViewProps> = ({
             {isRecording ? (
               <AudioWaveform active color="violet" bars={16} height="h-8" />
             ) : (
-              <p className="text-xs text-fog">
-                {selectedLanguage === 'swahili'
-                  ? 'YarnGPT does not currently list Kiswahili transcription. Type your message instead.'
-                  : 'Record a short message, then review and edit its transcript before sending'}
-              </p>
+              <p className="text-xs text-fog">Record a short message, then review and edit its transcript before sending</p>
             )}
           </div>
 

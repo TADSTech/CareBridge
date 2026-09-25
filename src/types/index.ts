@@ -1,4 +1,4 @@
-export type Language = 'pidgin' | 'yoruba' | 'english' | 'hausa' | 'igbo' | 'swahili';
+export type Language = 'pidgin' | 'yoruba' | 'english' | 'hausa' | 'igbo' | 'swahili' | 'afrikaans' | 'amharic' | 'zulu';
 
 export interface LanguageOption {
   id: Language;

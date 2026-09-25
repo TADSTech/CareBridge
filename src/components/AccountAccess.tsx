@@ -36,7 +36,8 @@ export const AccountAccess: React.FC<AccountAccessProps> = ({ onAuthenticated })
             <input type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} className="mt-1.5 w-full rounded-input border border-ash bg-cloud-white px-3 py-2.5 text-sm focus:outline-none focus:border-iris-pulse" />
           </label>
           <label className="block text-sm font-medium text-deep-iris">Password
-            <input type="password" autoComplete={mode === 'sign-in' ? 'current-password' : 'new-password'} minLength={8} required value={password} onChange={(event) => setPassword(event.target.value)} className="mt-1.5 w-full rounded-input border border-ash bg-cloud-white px-3 py-2.5 text-sm focus:outline-none focus:border-iris-pulse" />
+            <input type="password" autoComplete={mode === 'sign-in' ? 'current-password' : 'new-password'} minLength={10} maxLength={128} required value={password} onChange={(event) => setPassword(event.target.value)} className="mt-1.5 w-full rounded-input border border-ash bg-cloud-white px-3 py-2.5 text-sm focus:outline-none focus:border-iris-pulse" />
+            {mode === 'sign-up' && <span className="mt-1 block text-xs text-fog">Use at least 10 characters.</span>}
           </label>
           {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
           {notice && <p role="status" className="text-sm text-iris-pulse">{notice}</p>}

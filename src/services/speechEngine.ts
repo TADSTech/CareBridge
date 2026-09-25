@@ -49,6 +49,15 @@ export class SpeechEngine {
         case 'swahili':
           recognition.lang = 'sw-KE';
           break;
+        case 'afrikaans':
+          recognition.lang = 'af-ZA';
+          break;
+        case 'amharic':
+          recognition.lang = 'am-ET';
+          break;
+        case 'zulu':
+          recognition.lang = 'zu-ZA';
+          break;
         case 'pidgin':
         case 'english':
         default:
@@ -159,6 +168,12 @@ export class SpeechEngine {
         selectedVoice = voices.find((v) => v.lang.startsWith('yo') || v.lang.includes('NG'));
       } else if (language === 'swahili') {
         selectedVoice = voices.find((v) => v.lang.startsWith('sw') || v.lang.startsWith('ke'));
+      } else if (language === 'afrikaans') {
+        selectedVoice = voices.find((v) => v.lang.startsWith('af-ZA'));
+      } else if (language === 'amharic') {
+        selectedVoice = voices.find((v) => v.lang.startsWith('am-ET'));
+      } else if (language === 'zulu') {
+        selectedVoice = voices.find((v) => v.lang.startsWith('zu-ZA'));
       } else if (language === 'pidgin' || language === 'english') {
         selectedVoice =
           voices.find((v) => v.lang === 'en-NG' || v.name.includes('Nigeria')) ||
