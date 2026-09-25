@@ -34,6 +34,13 @@ function xmlEscape(value) {
 
 async function createVoice(text, language) {
   const voice = nationalVoice[language];
+  // YarnGPT supplies the Nigerian-English accent requested for the product.
+  // Keep Azure as the English fallback when YarnGPT is not configured.
+  if (language === 'english' && process.env.YARNGPT_API_KEY) {
+    const payload = { text, output_format: 'mp3' };
+    if (process.env.YARNGPT_DEFAULT_VOICE) payload.voice = process.env.YARNGPT_DEFAULT_VOICE.toLowerCase();
+    return providerFetch(yarnUrl, { method: 'POST', headers: { Authorization: `Bearer ${process.env.YARNGPT_API_KEY}`, 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, body: JSON.stringify(payload) });
+  }
   if (voice.provider === '9jalingo' && ninejaApiKey) {
     return providerFetch('https://api.9jalingo.org/v1/audio/speech', {
       method: 'POST',
@@ -51,7 +58,7 @@ async function createVoice(text, language) {
   }
   if (process.env.YARNGPT_API_KEY) {
     const payload = { text, output_format: 'mp3' };
-    if (process.env.YARNGPT_DEFAULT_VOICE) payload.voice = process.env.YARNGPT_DEFAULT_VOICE;
+    if (process.env.YARNGPT_DEFAULT_VOICE) payload.voice = process.env.YARNGPT_DEFAULT_VOICE.toLowerCase();
     return providerFetch(yarnUrl, { method: 'POST', headers: { Authorization: `Bearer ${process.env.YARNGPT_API_KEY}`, 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, body: JSON.stringify(payload) });
   }
   throw new Error(`No voice provider configured for ${language}.`);

@@ -155,7 +155,7 @@ export const PatientView: React.FC<PatientViewProps> = ({
         <div className="flex flex-col items-center text-center space-y-5">
           <button
             onClick={toggleRecording}
-            disabled={isProcessing}
+            disabled={isProcessing || (selectedLanguage === 'swahili' && !isRecording)}
             aria-label={isRecording ? 'Stop recording' : 'Start voice recording'}
             className={`w-20 h-20 rounded-full flex flex-col items-center justify-center transition-colors border-2 ${
               isRecording
@@ -180,7 +180,11 @@ export const PatientView: React.FC<PatientViewProps> = ({
             {isRecording ? (
               <AudioWaveform active color="violet" bars={16} height="h-8" />
             ) : (
-              <p className="text-xs text-fog">Record a short message, then review and edit its transcript before sending</p>
+              <p className="text-xs text-fog">
+                {selectedLanguage === 'swahili'
+                  ? 'YarnGPT does not currently list Kiswahili transcription. Type your message instead.'
+                  : 'Record a short message, then review and edit its transcript before sending'}
+              </p>
             )}
           </div>
 

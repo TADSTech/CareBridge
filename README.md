@@ -24,23 +24,23 @@ To enable accounts and saved consultations, create a Supabase project, run [data
 
 ## Text translation and speech
 
-Groq translates patient statements into English and clinician responses into plain English plus the selected patient language. The text is shown in the app before optional speech generation. Speech routing prefers 9jaLingo for Pidgin, Yorùbá, Hausa, and Igbo; Azure for Kiswahili and Nigerian English; and YarnGPT when the preferred provider is not configured. Voice IDs can be overridden in `.env.example`.
+Groq translates patient statements into English and clinician responses into plain English plus the selected patient language. The text is shown in the app before optional speech generation. Speech routing uses YarnGPT for Nigerian English (to retain its regional accent), 9jaLingo for Pidgin, Yorùbá, Hausa, and Igbo, and Azure for Kiswahili. YarnGPT voice IDs are case-insensitive in `.env`; the current value is normalized to the provider's lowercase IDs.
 
-The patient microphone records a short audio clip and sends it to the server-side YarnGPT ASR endpoint. The transcript is returned as editable text; it is never automatically sent to the clinician. Audio is held in memory during the request and not written to disk by this app. Browser speech synthesis remains a fallback if a speech API call fails and the browser has a voice available.
+The patient microphone records a short audio clip and sends it to YarnGPT's server-side ASR endpoint. The transcript is returned as editable text; it is never automatically sent to the clinician. YarnGPT's live ASR catalogue lists English, Yoruba, Igbo, Hausa, and Nigerian Pidgin; it does not list Kiswahili, so the app disables microphone transcription for Kiswahili and asks the patient to type instead. Audio is held in memory during the request and not written to disk by this app. Browser speech synthesis remains a fallback if a speech API call fails and the browser has a voice available.
 
 ### Other African voice options
 
 - **9jaLingo** advertises Hausa, Igbo, Yoruba, and Nigerian Pidgin voices; the integration selects those language routes when `NAIJALINGO_API_KEY` is set (the earlier `NINEJALINGO_API_KEY` spelling is also accepted).
 - **Microsoft Azure Speech** supplies the configured Kiswahili and Nigerian English voice when `AZURE_SPEECH_KEY` and `AZURE_SPEECH_REGION` are set. Other regional English voices are available by setting `AZURE_ENGLISH_VOICE` to a supported Azure voice ID.
 
-Latest live smoke check: Groq text processing passed for all six interface languages; Azure returned Nigerian English and Kiswahili audio; 9jaLingo returned Pidgin, Yoruba, Hausa, and Igbo audio. YarnGPT ASR returned HTTP 401, so microphone transcription still needs a valid/active YarnGPT key. These checks used fictional phrases. Review provider voice catalogues and validate pronunciation with native speakers before any care use.
+Latest live smoke check (2026-09-25): Groq text processing passed for all six interface languages; Azure returned Kiswahili audio; 9jaLingo returned Pidgin, Yoruba, Hausa, and Igbo audio; YarnGPT returned Nigerian English audio and transcribed that recording back to “good morning please tell me how i can help you today.” (HTTP 200). YarnGPT's ASR language catalogue endpoint returned HTTP 200 and listed English, Yoruba, Igbo, Hausa, and Pidgin. These checks used fictional phrases. This confirms the provider request path, not recognition quality across accents or noisy clinic environments. Review provider voice catalogues and validate pronunciation and transcripts with native speakers before any care use.
 
 ## Current prototype limits
 
 - Groq translates the patient's statement into English and prepares an intake draft. It does not diagnose, assess urgency, or generate vital signs. Clinicians must confirm the translation and assess the patient.
-- Accounts and consultation load/save are wired to Supabase Auth and its REST API, with per-user row-level security in `database/schema.sql`. They require a configured Supabase project and have not been live-tested because this workspace has no Supabase settings.
+- Accounts and consultation load/save are wired to Supabase Auth and its REST API, with per-user row-level security in `database/schema.sql`. They require a configured Supabase project and have not been live-tested because this workspace has no Supabase settings. Neon Postgres can be used instead, but the current Supabase Auth/Data API code and policies are not a drop-in fit; this requires a Neon database adapter and compatible authentication setup.
 - `Dockerfile` builds a single-origin production image. Supply the public Supabase URL and anon key as Docker build args to enable accounts. No live host, database, domain, or privacy review has been configured. Do not enter real patient data.
-- ASR is wired to YarnGPT's asynchronous endpoint but could not be confirmed because the configured key was rejected with HTTP 401. Manual editing remains available after transcription.
+- YarnGPT's asynchronous ASR path has now been live-tested on generated English audio. Its catalogue lists five ASR languages, leaving Kiswahili without the app's cloud transcription path; manual text entry remains available.
 - Translation, ASR, and voice output need review with fluent native speakers and licensed clinicians before any real-care use. See [validation/REVIEW_PROTOCOL.md](validation/REVIEW_PROTOCOL.md). No review or clinical sign-off has been completed.
 - Supported interface languages are Nigerian Pidgin, Yorùbá, English, Hausa, Igbo, and Kiswahili.
 
