@@ -33,3 +33,9 @@ pnpm-lock.yaml
 
 # PWA dev artifacts (generated in dist by vite-plugin-pwa)
 dev-dist/
+
+# Pitch deck and supporting docs (working documents)
+CareBridge-Pitch-Deck.pdf
+carebridge-pitch-draft.md
+summary.md
+pitch/
