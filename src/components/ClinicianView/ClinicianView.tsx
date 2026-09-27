@@ -67,6 +67,10 @@ export const ClinicianView: React.FC<ClinicianViewProps> = ({
     if (previewTimer.current !== null) window.clearTimeout(previewTimer.current);
   }, []);
 
+  useEffect(() => {
+    if (clinicianText.trim()) handleGeneratePreview(clinicianText);
+  }, [selectedLanguage]);
+
   const handleGeneratePreview = (text: string) => {
     setClinicianText(text);
     if (previewTimer.current !== null) window.clearTimeout(previewTimer.current);
@@ -348,9 +352,14 @@ export const ClinicianView: React.FC<ClinicianViewProps> = ({
                       <div className="text-[11px] font-semibold text-fog mb-1 flex items-center justify-between gap-2">
                         <span>Original patient speech ({currentLang.name})</span>
                         <button
-                          onClick={() =>
-                            SpeechEngine.speak(latestPatientMessage.originalText, latestPatientMessage.originalLanguage)
-                          }
+                          onClick={async () => {
+                            try {
+                              const provider = await SpeechEngine.speak(latestPatientMessage.originalText, latestPatientMessage.originalLanguage);
+                              if (provider) addToast(`Playing patient audio with ${provider}.`, 'success');
+                            } catch (error) {
+                              addToast(error instanceof Error ? error.message : 'Voice playback failed.', 'error');
+                            }
+                          }}
                           className="text-iris-pulse hover:underline flex items-center gap-1"
                         >
                           <Volume2 className="w-3 h-3" />
@@ -418,12 +427,12 @@ export const ClinicianView: React.FC<ClinicianViewProps> = ({
                   <div className="flex items-center justify-between text-xs font-semibold text-iris-pulse">
                     <span className="flex items-center gap-1.5">
                       <Sparkles className="w-3.5 h-3.5" />
-                      Spoken audio → {currentLang.name}
+                      Patient-language translation · {currentLang.name}
                     </span>
                     {isPreviewing && <RefreshCw className="w-3 h-3 animate-spin" />}
                   </div>
                   <p className="text-[15px] font-semibold text-deep-iris">
-                    “{previewTranslation?.translatedText || 'Generating…'}”
+                    “{previewTranslation?.translatedText || (isPreviewing ? 'Translating your reply…' : 'Translation will appear here.') }”
                   </p>
                   <div className="text-[11px] text-fog pt-1 border-t border-ash">
                     <span className="font-semibold text-deep-iris">Plain English:</span>{' '}
@@ -435,11 +444,11 @@ export const ClinicianView: React.FC<ClinicianViewProps> = ({
               <div className="flex justify-end pt-1">
                 <button
                   onClick={handleSend}
-                  disabled={!clinicianText.trim() || isProcessing}
+                  disabled={!clinicianText.trim() || isProcessing || isPreviewing}
                   className="btn-primary text-xs px-5 py-2.5"
                 >
                   <Send className="w-4 h-4" />
-                  <span>Translate & Send to Patient</span>
+                  <span>{isPreviewing ? 'Translating…' : 'Send translated reply'}</span>
                 </button>
               </div>
             </div>

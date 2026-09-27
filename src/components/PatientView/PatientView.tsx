@@ -135,14 +135,20 @@ export const PatientView: React.FC<PatientViewProps> = ({
     }
   };
 
-  const handlePlayVoice = (id: string, text: string, lang: Language) => {
+  const handlePlayVoice = async (id: string, text: string, lang: Language) => {
     if (playingAudioId === id) {
       SpeechEngine.stopSpeaking();
       setPlayingAudioId(null);
     } else {
       setPlayingAudioId(id);
-      addToast('Playing voice audio...', 'info');
-      SpeechEngine.speak(text, lang, prefs.speechRate, () => setPlayingAudioId(null));
+      addToast('Requesting the configured voice provider…', 'info');
+      try {
+        const provider = await SpeechEngine.speak(text, lang, prefs.speechRate, () => setPlayingAudioId(null));
+        if (provider) addToast(`Playing with ${provider}.`, 'success');
+      } catch (error) {
+        setPlayingAudioId(null);
+        addToast(error instanceof Error ? error.message : 'Voice playback failed. Check the speech provider setup.', 'error');
+      }
     }
   };
 

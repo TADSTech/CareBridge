@@ -159,7 +159,9 @@ export function App() {
 
       // Auto-play voice response for patient if enabled
       if (accessibilityPrefs.autoPlaySpeech) {
-        SpeechEngine.speak(result.translatedText, selectedLanguage, accessibilityPrefs.speechRate);
+        SpeechEngine.speak(result.translatedText, selectedLanguage, accessibilityPrefs.speechRate)
+          .then((provider) => provider && addToast(`Playing voice reply with ${provider}.`, 'success'))
+          .catch((err) => addToast(err instanceof Error ? err.message : 'Voice playback failed.', 'error'));
       }
     } catch (err) {
       setIsProcessing(false);
@@ -199,7 +201,9 @@ export function App() {
         setPerspective('patient');
         const lastMsg = messages[messages.length - 1];
         if (lastMsg && lastMsg.translatedText) {
-          SpeechEngine.speak(lastMsg.translatedText, selectedLanguage, accessibilityPrefs.speechRate);
+          SpeechEngine.speak(lastMsg.translatedText, selectedLanguage, accessibilityPrefs.speechRate)
+            .then((provider) => provider && addToast(`Playing with ${provider}.`, 'success'))
+            .catch((err) => addToast(err instanceof Error ? err.message : 'Voice playback failed.', 'error'));
         }
         addToast('Step 5: Playing Pidgin audio for patient...', 'success');
         break;

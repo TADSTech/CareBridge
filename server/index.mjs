@@ -135,23 +135,36 @@ function xmlEscape(value) {
   return value.replace(/[<>&'\"]/g, (char) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '\"': '&quot;' })[char]);
 }
 
-async function createVoice(text, language) {
+function voiceProvidersFor(language) {
   const voice = nationalVoice[language];
-  // YarnGPT supplies the Nigerian-English accent requested for the product.
-  // Keep Azure as the English fallback when YarnGPT is not configured.
-  if (language === 'english' && process.env.YARNGPT_API_KEY) {
+  const hasYarn = Boolean(process.env.YARNGPT_API_KEY);
+  const hasNineja = Boolean(ninejaApiKey);
+  const hasAzure = Boolean(process.env.AZURE_SPEECH_KEY && process.env.AZURE_SPEECH_REGION);
+  const providers = [];
+
+  // YarnGPT is primary for Nigerian English and the three requested local languages.
+  if (['english', 'hausa', 'yoruba', 'igbo'].includes(language) && hasYarn) providers.push('YarnGPT');
+  if (voice.provider === '9jalingo' && hasNineja) providers.push('9jaLingo');
+  if (voice.provider === 'azure' && hasAzure) providers.push('Azure Speech');
+  if (hasYarn && !providers.includes('YarnGPT')) providers.push('YarnGPT');
+  return providers;
+}
+
+async function createVoice(text, language, provider) {
+  const voice = nationalVoice[language];
+  if (provider === 'YarnGPT' && process.env.YARNGPT_API_KEY) {
     const payload = { text, output_format: 'mp3' };
     if (process.env.YARNGPT_DEFAULT_VOICE) payload.voice = process.env.YARNGPT_DEFAULT_VOICE.toLowerCase();
     return providerFetch(yarnUrl, { method: 'POST', headers: { Authorization: `Bearer ${process.env.YARNGPT_API_KEY}`, 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, body: JSON.stringify(payload) });
   }
-  if (voice.provider === '9jalingo' && ninejaApiKey) {
+  if (provider === '9jaLingo' && ninejaApiKey) {
     return providerFetch('https://api.9jalingo.org/v1/audio/speech', {
       method: 'POST',
       headers: { 'X-API-Key': ninejaApiKey, 'Content-Type': 'application/json' },
       body: JSON.stringify({ input: text, lang: voice.lang, voice: process.env[`NINEJALINGO_${language.toUpperCase()}_VOICE`] || voice.voice, response_format: 'mp3' }),
     });
   }
-  if (voice.provider === 'azure' && process.env.AZURE_SPEECH_KEY && process.env.AZURE_SPEECH_REGION) {
+  if (provider === 'Azure Speech' && process.env.AZURE_SPEECH_KEY && process.env.AZURE_SPEECH_REGION) {
     const ssml = `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="${voice.voice.slice(0,5)}"><voice name="${voice.voice}">${xmlEscape(text)}</voice></speak>`;
     return providerFetch(`https://${process.env.AZURE_SPEECH_REGION}.tts.speech.microsoft.com/cognitiveservices/v1`, {
       method: 'POST',
@@ -159,7 +172,7 @@ async function createVoice(text, language) {
       body: ssml,
     });
   }
-  if (process.env.YARNGPT_API_KEY) {
+  if (provider === 'YarnGPT' && process.env.YARNGPT_API_KEY) {
     const payload = { text, output_format: 'mp3' };
     if (process.env.YARNGPT_DEFAULT_VOICE) payload.voice = process.env.YARNGPT_DEFAULT_VOICE.toLowerCase();
     return providerFetch(yarnUrl, { method: 'POST', headers: { Authorization: `Bearer ${process.env.YARNGPT_API_KEY}`, 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, body: JSON.stringify(payload) });
@@ -364,7 +377,6 @@ const server = createServer(async (request, response) => {
   }
   if (request.method === 'POST' && url.pathname === '/api/asr') {
     try {
-      if (!process.env.YARNGPT_API_KEY) throw new Error('YarnGPT transcription is not configured. Type your message or configure YARNGPT_API_KEY.');
       const { audioBase64, mimeType, language } = await readJsonLarge(request);
       if (typeof audioBase64 !== 'string' || !Object.hasOwn(languageNames, language)) throw new Error('Invalid audio or language.');
       const bytes = Buffer.from(audioBase64, 'base64');
@@ -375,6 +387,7 @@ const server = createServer(async (request, response) => {
         sendJson(response, 200, { transcript });
         return;
       }
+      if (!process.env.YARNGPT_API_KEY) throw new Error('YarnGPT transcription is not configured. Type your message or configure YARNGPT_API_KEY.');
       const form = new FormData();
       form.append('file', new Blob([bytes], { type: mimeType || 'audio/webm' }), 'patient-audio.webm');
       const started = await providerFetch('https://api.yarngpt.ai/api/v1/asr', { method: 'POST', headers: { Authorization: `Bearer ${process.env.YARNGPT_API_KEY}`, 'Idempotency-Key': crypto.randomUUID() }, body: form });
@@ -458,13 +471,33 @@ const server = createServer(async (request, response) => {
       response.end(JSON.stringify({ error: 'Text must contain 1–5,000 characters.' }));
       return;
     }
-    const audioResponse = await createVoice(text.trim(), language);
-    if (!audioResponse.ok) {
-      response.writeHead(audioResponse.status, { 'content-type': 'application/json' });
-      response.end(JSON.stringify({ error: `Configured speech provider could not create audio (${audioResponse.status}).` }));
-      return;
+    const voiceProviders = voiceProvidersFor(language);
+    if (!voiceProviders.length) throw new Error(`No configured voice provider is available for ${languageNames[language]}. Add YarnGPT, 9jaLingo, or Azure credentials.`);
+    let audioResponse;
+    let voiceProvider;
+    let providerError;
+    for (const candidate of voiceProviders) {
+      try {
+        const candidateResponse = await createVoice(text.trim(), language, candidate);
+        if (candidateResponse.ok) {
+          audioResponse = candidateResponse;
+          voiceProvider = candidate;
+          break;
+        }
+        providerError = `${candidate} could not create audio (${candidateResponse.status}).`;
+      } catch (error) {
+        providerError = `${candidate} request failed: ${error instanceof Error ? error.message : 'unknown error'}`;
+      }
     }
-    response.writeHead(200, { 'content-type': audioResponse.headers.get('content-type') || 'audio/mpeg', 'cache-control': 'no-store' });
+    if (!audioResponse) throw new Error(providerError || 'All configured voice providers failed.');
+    const usedFallback = voiceProvider !== voiceProviders[0];
+    const headers = {
+      'content-type': audioResponse.headers.get('content-type') || 'audio/mpeg',
+      'cache-control': 'no-store',
+      'X-CareBridge-Voice-Provider': voiceProvider,
+    };
+    if (usedFallback) headers['X-CareBridge-Voice-Fallback'] = voiceProviders[0];
+    response.writeHead(200, headers);
     if (audioResponse.body) {
       for await (const chunk of audioResponse.body) response.write(chunk);
     }

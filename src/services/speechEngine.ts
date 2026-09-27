@@ -102,14 +102,12 @@ export class SpeechEngine {
     }
   }
 
-  /**
-   * Prefer YarnGPT speech; use browser speech synthesis when the API is unavailable.
-   */
-  static speak(text: string, language: Language, rate: number = 0.95, onEnd?: () => void): void {
-    void this.speakWithYarn(text, language, rate, onEnd);
+  /** Use the language's configured provider; surface provider failures clearly. */
+  static speak(text: string, language: Language, rate: number = 0.95, onEnd?: () => void): Promise<string> {
+    return this.speakWithProvider(text, language, rate, onEnd);
   }
 
-  private static async speakWithYarn(text: string, language: Language, rate: number, onEnd?: () => void) {
+  private static async speakWithProvider(text: string, language: Language, rate: number, onEnd?: () => void): Promise<string> {
     this.stopSpeaking();
     const requestId = this.requestId;
     const controller = new AbortController();
@@ -121,8 +119,13 @@ export class SpeechEngine {
         body: JSON.stringify({ text, language, translated: true }),
         signal: controller.signal,
       });
-      if (requestId !== this.requestId) return;
-      if (!response.ok) throw new Error('YarnGPT voice is unavailable.');
+      if (requestId !== this.requestId) return '';
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        throw new Error(result.error || `Voice service returned ${response.status}.`);
+      }
+      const provider = response.headers.get('X-CareBridge-Voice-Provider') || 'configured voice service';
+      const fallbackFor = response.headers.get('X-CareBridge-Voice-Fallback');
       const audioUrl = URL.createObjectURL(await response.blob());
       const audio = new Audio(audioUrl);
       this.audio = audio;
@@ -135,66 +138,16 @@ export class SpeechEngine {
       audio.onerror = () => {
         URL.revokeObjectURL(audioUrl);
         if (this.audio === audio) this.audio = null;
-        this.speakInBrowser(text, language, rate, onEnd);
+        onEnd?.();
       };
       await audio.play();
-    } catch {
-      if (requestId !== this.requestId) return;
-      this.speakInBrowser(text, language, rate, onEnd);
+      return fallbackFor ? `${provider} fallback (after ${fallbackFor})` : provider;
+    } catch (error) {
+      if (requestId !== this.requestId) return '';
+      throw error;
     } finally {
       if (this.requestController === controller) this.requestController = null;
     }
-  }
-
-  private static speakInBrowser(text: string, language: Language, rate: number, onEnd?: () => void): void {
-    if (!this.synth) {
-      if (onEnd) onEnd();
-      return;
-    }
-
-    // Cancel any ongoing speech
-    this.synth.cancel();
-
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = rate;
-    utterance.pitch = 1.0;
-
-    // Pick appropriate voice if available
-    const voices = this.synth.getVoices();
-    let selectedVoice = null;
-
-    if (voices.length > 0) {
-      if (language === 'yoruba') {
-        selectedVoice = voices.find((v) => v.lang.startsWith('yo') || v.lang.includes('NG'));
-      } else if (language === 'swahili') {
-        selectedVoice = voices.find((v) => v.lang.startsWith('sw') || v.lang.startsWith('ke'));
-      } else if (language === 'afrikaans') {
-        selectedVoice = voices.find((v) => v.lang.startsWith('af-ZA'));
-      } else if (language === 'amharic') {
-        selectedVoice = voices.find((v) => v.lang.startsWith('am-ET'));
-      } else if (language === 'zulu') {
-        selectedVoice = voices.find((v) => v.lang.startsWith('zu-ZA'));
-      } else if (language === 'pidgin' || language === 'english') {
-        selectedVoice =
-          voices.find((v) => v.lang === 'en-NG' || v.name.includes('Nigeria')) ||
-          voices.find((v) => v.lang.startsWith('en-GB')) ||
-          voices.find((v) => v.lang.startsWith('en'));
-      }
-    }
-
-    if (selectedVoice) {
-      utterance.voice = selectedVoice;
-    }
-
-    utterance.onend = () => {
-      if (onEnd) onEnd();
-    };
-
-    utterance.onerror = () => {
-      if (onEnd) onEnd();
-    };
-
-    this.synth.speak(utterance);
   }
 
   /**
