@@ -21,14 +21,24 @@ export function getStoredSession(): AccountSession | null {
 }
 
 async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(`/api${path}`, {
-    ...init,
-    credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json', ...(init.headers || {}) },
-  });
-  const result = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(result.error || 'Account request failed.');
-  return result as T;
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), 15_000);
+  try {
+    const response = await fetch(`/api${path}`, {
+      ...init,
+      signal: controller.signal,
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', ...(init.headers || {}) },
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || 'Account request failed.');
+    return result as T;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') throw new Error('The account service took too long to respond. Try again.');
+    throw error;
+  } finally {
+    window.clearTimeout(timer);
+  }
 }
 
 async function authenticate(path: string, email: string, password: string): Promise<AccountSession> {
@@ -53,11 +63,12 @@ export async function signOut(_session: AccountSession | null): Promise<void> {
   finally { storeSession(null); }
 }
 
-export async function getValidSession(_session: AccountSession): Promise<AccountSession> {
+export async function getValidSession(session: AccountSession): Promise<AccountSession> {
   const result = await apiRequest<{ user: AccountSession['user'] }>('/auth/me');
-  const session = { user: result.user };
-  storeSession(session);
-  return session;
+  if (session.user?.id === result.user?.id && session.user?.email === result.user?.email) return session;
+  const refreshed = { user: result.user };
+  storeSession(refreshed);
+  return refreshed;
 }
 
 async function readOrCreateConsultation(): Promise<{ id: string; messages: Message[] }> {
