@@ -64,11 +64,6 @@ export default defineConfig({
       },
     }),
   ],
-  server: {
-    port: 3000,
-    host: true,
-    proxy: { '/api': 'http://localhost:3001' },
-  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
