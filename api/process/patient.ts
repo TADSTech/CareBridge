@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { sendJson, readJson } from '../../lib/helpers';
-import { groqJson, patientSchema } from '../../lib/ai';
+import { sendJson, readJson } from '../../lib/helpers.js';
+import { groqJson, patientSchema } from '../../lib/ai.js';
 
 const languageNames: Record<string, string> = {
   english: 'English', pidgin: 'Nigerian Pidgin', yoruba: 'Yoruba',

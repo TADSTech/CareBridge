@@ -1,4 +1,4 @@
-import { providerFetch, xmlEscape } from './helpers';
+import { providerFetch, xmlEscape } from './helpers.js';
 
 const yarnUrl = 'https://api.yarngpt.ai/api/v1/streaming/conversation';
 const ninejaApiKey = process.env.NAIJALINGO_API_KEY || process.env.NINEJALINGO_API_KEY;

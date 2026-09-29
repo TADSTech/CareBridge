@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { sendJson, readJsonLarge, providerFetch } from '../../lib/helpers';
-import { transcribeWithAzure, azureRecognitionLocale } from '../../lib/speech';
+import { sendJson, readJsonLarge, providerFetch } from '../lib/helpers.js';
+import { transcribeWithAzure, azureRecognitionLocale } from '../lib/speech.js';
 
 const languageNames: Record<string, string> = {
   english: 'English', pidgin: 'Nigerian Pidgin', yoruba: 'Yoruba',

@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getDb } from '../../lib/db';
-import { hashSessionToken, readCookie, clearSessionCookie, isSameSiteRequest } from '../../lib/auth';
-import { sendJson } from '../../lib/helpers';
+import { getDb } from '../../lib/db.js';
+import { hashSessionToken, readCookie, clearSessionCookie, isSameSiteRequest } from '../../lib/auth.js';
+import { sendJson } from '../../lib/helpers.js';
 
 const sessionCookieName = 'carebridge_session';
 

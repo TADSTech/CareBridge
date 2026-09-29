@@ -1,4 +1,4 @@
-import { providerFetch } from './helpers';
+import { providerFetch } from './helpers.js';
 
 const patientSchema = {
   type: 'object',

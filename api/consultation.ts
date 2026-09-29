@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getDb, ensureAccountSchema } from '../../lib/db';
-import { authenticatedUser, isSameSiteRequest } from '../../lib/auth';
-import { sendJson } from '../../lib/helpers';
+import { getDb, ensureAccountSchema } from '../lib/db.js';
+import { authenticatedUser, isSameSiteRequest } from '../lib/auth.js';
+import { sendJson } from '../lib/helpers.js';
 
 export default async function handler(request: VercelRequest, response: VercelResponse) {
   response.setHeader('X-Content-Type-Options', 'nosniff');

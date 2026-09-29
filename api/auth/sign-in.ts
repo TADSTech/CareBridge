@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getDb, ensureAccountSchema } from '../../lib/db';
-import { derivePasswordHash, createAccountSession, isSameSiteRequest } from '../../lib/auth';
-import { sendJson, readJson, checkAuthRateLimit } from '../../lib/helpers';
+import { getDb, ensureAccountSchema } from '../../lib/db.js';
+import { derivePasswordHash, createAccountSession, isSameSiteRequest } from '../../lib/auth.js';
+import { sendJson, readJson, checkAuthRateLimit } from '../../lib/helpers.js';
 
 export default async function handler(request: VercelRequest, response: VercelResponse) {
   response.setHeader('X-Content-Type-Options', 'nosniff');

@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { sendJson, readJson } from '../../lib/helpers';
-import { createVoice } from '../../lib/speech';
+import { sendJson, readJson } from '../lib/helpers.js';
+import { createVoice } from '../lib/speech.js';
 
 const languageNames: Record<string, string> = {
   english: 'English', pidgin: 'Nigerian Pidgin', yoruba: 'Yoruba',
